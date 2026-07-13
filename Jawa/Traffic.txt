@@ -1,0 +1,11 @@
+* Traffic Management System (single-file Java Swing application)
+* - Uses JDBC to connect to a MySQL database (configurable)
+* - Creates three tables if they don't exist: vehicles, signals, violations
+* - Performs CRUD operations on Vehicles and Signals, and logs Violations
+* - Simple GUI with tabs for Vehicles, Signals and Violations
+*
+* Notes:
+* 1) Add MySQL JDBC driver to classpath (mysql-connector-java-x.x.x.jar)
+* 2) Configure DB connection parameters in DBConfig class below
+*
+* This file is intended as a starting point for a course project; expand as needed.
