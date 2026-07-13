@@ -1,0 +1,533 @@
+cd C:/Projects/Jawa
+javac -cp ".;mysql-connector-j-9.4.0.jar" TrafficManagementSystem.java
+java  -cp ".;mysql-connector-j-9.4.0.jar" TrafficManagementSystem
+
+
+cd C:/Projects/Jawa
+javac -cp ".;mysql-connector-j-9.4.0.jar" LoginPage.java TrafficManagementSystem.java TrafficUserView.java
+java -cp ".;mysql-connector-j-9.4.0.jar" LoginPage
+
+
+Administrator:
+Username: admin
+Password: admin123
+
+User:
+Username: user
+Password: user123
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.awt.event.*;
+import java.sql.*;
+import java.util.Vector;
+
+public class TrafficManagementSystem extends JFrame {
+
+    // ---------------- DB CONFIG ----------------
+    static class DBConfig {
+        
+        static final String URL = "jdbc:mysql://localhost:3306/traffic_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
+        static final String USER = "Ash";
+        static final String PASS = "aswanthp@karunya.edu.in";
+    }
+
+    // ---------------- DB UTIL ----------------
+    static class DBUtil {
+        static Connection getConnection() throws SQLException {
+            return DriverManager.getConnection(DBConfig.URL, DBConfig.USER, DBConfig.PASS);
+        }
+
+        // initialize database: create schema/tables
+        static void initialize() {
+            try (Connection conn = getConnection(); Statement st = conn.createStatement()) {
+                // Create tables: vehicles, signals, violations
+                String createVehicles = "CREATE TABLE IF NOT EXISTS vehicles ("
+                        + "id INT AUTO_INCREMENT PRIMARY KEY,"
+                        + "plate VARCHAR(20) NOT NULL UNIQUE,"
+                        + "owner VARCHAR(100),"
+                        + "type VARCHAR(50),"
+                        + "registered_date DATE"
+                        + ")";
+
+                String createSignals = "CREATE TABLE IF NOT EXISTS signals ("
+                        + "id INT AUTO_INCREMENT PRIMARY KEY,"
+                        + "location VARCHAR(200) NOT NULL UNIQUE,"
+                        + "status VARCHAR(20) NOT NULL," // e.g., OPERATIONAL, MAINTENANCE
+                        + "last_inspection DATE"
+                        + ")";
+
+                String createViolations = "CREATE TABLE IF NOT EXISTS violations ("
+                        + "id INT AUTO_INCREMENT PRIMARY KEY,"
+                        + "vehicle_id INT NOT NULL,"
+                        + "signal_id INT,"
+                        + "violation_type VARCHAR(100),"
+                        + "fine DECIMAL(10,2),"
+                        + "violation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                        + "FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE,"
+                        + "FOREIGN KEY (signal_id) REFERENCES signals(id) ON DELETE SET NULL"
+                        + ")";
+
+                st.execute(createVehicles);
+                st.execute(createSignals);
+                st.execute(createViolations);
+
+            } catch (SQLException e) {
+                JOptionPane.showMessageDialog(null, "DB Initialization Error: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+    }
+
+    // ---------------- UI Components ----------------
+    private JTabbedPane tabs;
+
+    // Vehicles tab components
+    private JTable vehicleTable;
+    private DefaultTableModel vehicleModel;
+    private JTextField plateField, ownerField, typeField, regDateField;
+
+    // Signals tab components
+    private JTable signalTable;
+    private DefaultTableModel signalModel;
+    private JTextField locationField, statusField, inspDateField;
+
+    // Violations tab components
+    private JTable violationTable;
+    private DefaultTableModel violationModel;
+    private JComboBox<String> vehicleComboForViolation;
+    private JComboBox<String> signalComboForViolation;
+    private JTextField violationTypeField, fineField;
+
+    public TrafficManagementSystem() {
+        super("Traffic Management System");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(900, 600);
+        setLocationRelativeTo(null);
+
+        DBUtil.initialize();
+
+        tabs = new JTabbedPane();
+
+        tabs.addTab("Vehicles", createVehiclesPanel());
+        tabs.addTab("Signals", createSignalsPanel());
+        tabs.addTab("Violations", createViolationsPanel());
+
+        add(tabs);
+
+        // load initial data
+        loadVehicles();
+        loadSignals();
+        loadViolations();
+    }
+
+    // ---------------- Vehicles Panel ----------------
+    private JPanel createVehiclesPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+
+        // Top form
+        JPanel form = new JPanel(new GridLayout(2, 5, 8, 8));
+        plateField = new JTextField();
+        ownerField = new JTextField();
+        typeField = new JTextField();
+        regDateField = new JTextField(); // yyyy-mm-dd
+
+        form.add(new JLabel("Plate:")); form.add(new JLabel("Owner:")); form.add(new JLabel("Type:")); form.add(new JLabel("Registered Date (YYYY-MM-DD):"));
+        form.add(new JLabel("") );
+
+        form.add(plateField); form.add(ownerField); form.add(typeField); form.add(regDateField);
+
+        JButton addBtn = new JButton("Add Vehicle");
+        JButton updateBtn = new JButton("Update Selected");
+        JButton deleteBtn = new JButton("Delete Selected");
+
+        JPanel btnPanel = new JPanel();
+        btnPanel.add(addBtn); btnPanel.add(updateBtn); btnPanel.add(deleteBtn);
+
+        JPanel north = new JPanel(new BorderLayout());
+        north.add(form, BorderLayout.CENTER);
+        north.add(btnPanel, BorderLayout.SOUTH);
+
+        // Table
+        vehicleModel = new DefaultTableModel(new String[]{"ID","Plate","Owner","Type","Registered Date"}, 0) {
+            public boolean isCellEditable(int row, int col) { return false; }
+        };
+        vehicleTable = new JTable(vehicleModel);
+        JScrollPane scroll = new JScrollPane(vehicleTable);
+
+        panel.add(north, BorderLayout.NORTH);
+        panel.add(scroll, BorderLayout.CENTER);
+
+        // Actions
+        addBtn.addActionListener(e -> addVehicle());
+        updateBtn.addActionListener(e -> updateSelectedVehicle());
+        deleteBtn.addActionListener(e -> deleteSelectedVehicle());
+
+        vehicleTable.addMouseListener(new MouseAdapter() {
+            public void mouseClicked(MouseEvent e) {
+                int r = vehicleTable.getSelectedRow();
+                if (r >= 0) {
+                    plateField.setText((String) vehicleModel.getValueAt(r,1));
+                    ownerField.setText((String) vehicleModel.getValueAt(r,2));
+                    typeField.setText((String) vehicleModel.getValueAt(r,3));
+                    regDateField.setText(String.valueOf(vehicleModel.getValueAt(r,4)));
+                }
+            }
+        });
+
+        return panel;
+    }
+
+    // ---------------- Signals Panel ----------------
+    private JPanel createSignalsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+
+        JPanel form = new JPanel(new GridLayout(2,4,8,8));
+        locationField = new JTextField();
+        statusField = new JTextField();
+        inspDateField = new JTextField();
+
+        form.add(new JLabel("Location:")); form.add(new JLabel("Status (OPERATIONAL/MAINTENANCE):")); form.add(new JLabel("Last Inspection (YYYY-MM-DD):")); form.add(new JLabel(""));
+        form.add(locationField); form.add(statusField); form.add(inspDateField);
+
+        JButton addBtn = new JButton("Add Signal");
+        JButton updateBtn = new JButton("Update Selected");
+        JButton deleteBtn = new JButton("Delete Selected");
+
+        JPanel btnPanel = new JPanel(); btnPanel.add(addBtn); btnPanel.add(updateBtn); btnPanel.add(deleteBtn);
+
+        JPanel north = new JPanel(new BorderLayout());
+        north.add(form, BorderLayout.CENTER); north.add(btnPanel, BorderLayout.SOUTH);
+
+        signalModel = new DefaultTableModel(new String[]{"ID","Location","Status","Last Inspection"},0) { public boolean isCellEditable(int r,int c){return false;} };
+        signalTable = new JTable(signalModel);
+        JScrollPane scroll = new JScrollPane(signalTable);
+
+        panel.add(north, BorderLayout.NORTH); panel.add(scroll, BorderLayout.CENTER);
+
+        addBtn.addActionListener(e -> addSignal());
+        updateBtn.addActionListener(e -> updateSelectedSignal());
+        deleteBtn.addActionListener(e -> deleteSelectedSignal());
+
+        signalTable.addMouseListener(new MouseAdapter() {
+            public void mouseClicked(MouseEvent e) {
+                int r = signalTable.getSelectedRow();
+                if (r >= 0) {
+                    locationField.setText((String) signalModel.getValueAt(r,1));
+                    statusField.setText((String) signalModel.getValueAt(r,2));
+                    inspDateField.setText(String.valueOf(signalModel.getValueAt(r,3)));
+                }
+            }
+        });
+
+        return panel;
+    }
+
+    // ---------------- Violations Panel ----------------
+    private JPanel createViolationsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+
+        JPanel form = new JPanel(new GridLayout(2,5,8,8));
+        vehicleComboForViolation = new JComboBox<>();
+        signalComboForViolation = new JComboBox<>();
+        violationTypeField = new JTextField();
+        fineField = new JTextField();
+
+        form.add(new JLabel("Vehicle (Plate):")); form.add(new JLabel("Signal (Location) or blank:")); form.add(new JLabel("Violation Type:")); form.add(new JLabel("Fine:")); form.add(new JLabel(""));
+        form.add(vehicleComboForViolation); form.add(signalComboForViolation); form.add(violationTypeField); form.add(fineField);
+
+        JButton addBtn = new JButton("Log Violation");
+        JButton refreshBtn = new JButton("Refresh Combos");
+
+        JPanel btnPanel = new JPanel(); btnPanel.add(addBtn); btnPanel.add(refreshBtn);
+
+        JPanel north = new JPanel(new BorderLayout()); north.add(form, BorderLayout.CENTER); north.add(btnPanel, BorderLayout.SOUTH);
+
+        violationModel = new DefaultTableModel(new String[]{"ID","Plate","Location","Type","Fine","Date"},0) { public boolean isCellEditable(int r,int c){return false;} };
+        violationTable = new JTable(violationModel);
+        JScrollPane scroll = new JScrollPane(violationTable);
+
+        panel.add(north, BorderLayout.NORTH); panel.add(scroll, BorderLayout.CENTER);
+
+        addBtn.addActionListener(e -> addViolation());
+        refreshBtn.addActionListener(e -> { loadVehicles(); loadSignals(); });
+
+        return panel;
+    }
+
+    // ---------------- CRUD METHODS (Vehicles) ----------------
+    private void addVehicle() {
+        String plate = plateField.getText().trim();
+        String owner = ownerField.getText().trim();
+        String type = typeField.getText().trim();
+        String regDate = regDateField.getText().trim();
+        if (plate.isEmpty()) { JOptionPane.showMessageDialog(this, "Plate is required"); return; }
+
+        String sql = "INSERT INTO vehicles (plate, owner, type, registered_date) VALUES (?, ?, ?, ?)";
+        try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, plate);
+            ps.setString(2, owner.isEmpty()? null : owner);
+            ps.setString(3, type.isEmpty()? null : type);
+            ps.setString(4, regDate.isEmpty()? null : regDate);
+            ps.executeUpdate();
+            JOptionPane.showMessageDialog(this, "Vehicle added.");
+            clearVehicleForm();
+            loadVehicles();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error adding vehicle: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void updateSelectedVehicle() {
+        int r = vehicleTable.getSelectedRow();
+        if (r < 0) { JOptionPane.showMessageDialog(this, "Select a vehicle to update"); return; }
+        int id = Integer.parseInt(vehicleModel.getValueAt(r,0).toString());
+        String plate = plateField.getText().trim();
+        String owner = ownerField.getText().trim();
+        String type = typeField.getText().trim();
+        String regDate = regDateField.getText().trim();
+
+        String sql = "UPDATE vehicles SET plate=?, owner=?, type=?, registered_date=? WHERE id=?";
+        try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, plate);
+            ps.setString(2, owner.isEmpty()? null : owner);
+            ps.setString(3, type.isEmpty()? null : type);
+            ps.setString(4, regDate.isEmpty()? null : regDate);
+            ps.setInt(5, id);
+            ps.executeUpdate();
+            JOptionPane.showMessageDialog(this, "Vehicle updated.");
+            clearVehicleForm();
+            loadVehicles();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error updating vehicle: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void deleteSelectedVehicle() {
+        int r = vehicleTable.getSelectedRow();
+        if (r < 0) { JOptionPane.showMessageDialog(this, "Select a vehicle to delete"); return; }
+        int id = Integer.parseInt(vehicleModel.getValueAt(r,0).toString());
+        int confirm = JOptionPane.showConfirmDialog(this, "Delete selected vehicle?", "Confirm", JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) return;
+        String sql = "DELETE FROM vehicles WHERE id=?";
+        try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            ps.executeUpdate();
+            JOptionPane.showMessageDialog(this, "Vehicle deleted.");
+            clearVehicleForm();
+            loadVehicles();
+            loadViolations(); // refresh
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error deleting vehicle: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void clearVehicleForm() {
+        plateField.setText(""); ownerField.setText(""); typeField.setText(""); regDateField.setText("");
+    }
+
+    private void loadVehicles() {
+        vehicleModel.setRowCount(0);
+        vehicleComboForViolation.removeAllItems();
+        String sql = "SELECT id, plate, owner, type, registered_date FROM vehicles ORDER BY id";
+        try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                Vector<Object> row = new Vector<>();
+                int id = rs.getInt("id");
+                String plate = rs.getString("plate");
+                row.add(id); row.add(plate); row.add(rs.getString("owner")); row.add(rs.getString("type")); row.add(rs.getDate("registered_date"));
+                vehicleModel.addRow(row);
+                vehicleComboForViolation.addItem(id + ": " + plate);
+            }
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error loading vehicles: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    // ---------------- CRUD METHODS (Signals) ----------------
+    private void addSignal() {
+        String location = locationField.getText().trim();
+        String status = statusField.getText().trim();
+        String insp = inspDateField.getText().trim();
+        if (location.isEmpty()) { JOptionPane.showMessageDialog(this, "Location required"); return; }
+        String sql = "INSERT INTO signals (location, status, last_inspection) VALUES (?, ?, ?)";
+        try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, location);
+            ps.setString(2, status.isEmpty()? "OPERATIONAL" : status);
+            ps.setString(3, insp.isEmpty()? null : insp);
+            ps.executeUpdate();
+            JOptionPane.showMessageDialog(this, "Signal added.");
+            clearSignalForm();
+            loadSignals();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error adding signal: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void updateSelectedSignal() {
+        int r = signalTable.getSelectedRow();
+        if (r < 0) { JOptionPane.showMessageDialog(this, "Select a signal to update"); return; }
+        int id = Integer.parseInt(signalModel.getValueAt(r,0).toString());
+        String location = locationField.getText().trim();
+        String status = statusField.getText().trim();
+        String insp = inspDateField.getText().trim();
+
+        String sql = "UPDATE signals SET location=?, status=?, last_inspection=? WHERE id=?";
+        try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, location);
+            ps.setString(2, status.isEmpty()? "OPERATIONAL" : status);
+            ps.setString(3, insp.isEmpty()? null : insp);
+            ps.setInt(4, id);
+            ps.executeUpdate();
+            JOptionPane.showMessageDialog(this, "Signal updated.");
+            clearSignalForm();
+            loadSignals();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error updating signal: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void deleteSelectedSignal() {
+        int r = signalTable.getSelectedRow();
+        if (r < 0) { JOptionPane.showMessageDialog(this, "Select a signal to delete"); return; }
+        int id = Integer.parseInt(signalModel.getValueAt(r,0).toString());
+        int confirm = JOptionPane.showConfirmDialog(this, "Delete selected signal?", "Confirm", JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) return;
+        String sql = "DELETE FROM signals WHERE id=?";
+        try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            ps.executeUpdate();
+            JOptionPane.showMessageDialog(this, "Signal deleted.");
+            clearSignalForm();
+            loadSignals();
+            loadViolations();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error deleting signal: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void clearSignalForm() { locationField.setText(""); statusField.setText(""); inspDateField.setText(""); }
+
+    private void loadSignals() {
+        signalModel.setRowCount(0);
+        signalComboForViolation.removeAllItems();
+        String sql = "SELECT id, location, status, last_inspection FROM signals ORDER BY id";
+        try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                Vector<Object> row = new Vector<>();
+                int id = rs.getInt("id");
+                row.add(id); row.add(rs.getString("location")); row.add(rs.getString("status")); row.add(rs.getDate("last_inspection"));
+                signalModel.addRow(row);
+                signalComboForViolation.addItem(id + ": " + rs.getString("location"));
+            }
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error loading signals: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    // ---------------- Violations ----------------
+    private void addViolation() {
+        String vsel = (String) vehicleComboForViolation.getSelectedItem();
+        if (vsel == null) { JOptionPane.showMessageDialog(this, "No vehicle selected"); return; }
+        int vehicleId = Integer.parseInt(vsel.split(":")[0].trim());
+        String ssel = (String) signalComboForViolation.getSelectedItem();
+        Integer signalId = null;
+        if (ssel != null) signalId = Integer.parseInt(ssel.split(":")[0].trim());
+
+        String vtype = violationTypeField.getText().trim();
+        String fineStr = fineField.getText().trim();
+        double fine = 0.0;
+        try { if (!fineStr.isEmpty()) fine = Double.parseDouble(fineStr); } catch (NumberFormatException ex) { JOptionPane.showMessageDialog(this, "Invalid fine value"); return; }
+
+        String sql = "INSERT INTO violations (vehicle_id, signal_id, violation_type, fine) VALUES (?, ?, ?, ?)";
+        try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, vehicleId);
+            if (signalId == null) ps.setNull(2, Types.INTEGER); else ps.setInt(2, signalId);
+            ps.setString(3, vtype.isEmpty()? "Unknown" : vtype);
+            ps.setDouble(4, fine);
+            ps.executeUpdate();
+            JOptionPane.showMessageDialog(this, "Violation logged.");
+            violationTypeField.setText(""); fineField.setText("");
+            loadViolations();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error logging violation: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void loadViolations() {
+        violationModel.setRowCount(0);
+        String sql = "SELECT v.id, ve.plate, s.location, v.violation_type, v.fine, v.violation_date "
+                + "FROM violations v LEFT JOIN vehicles ve ON v.vehicle_id = ve.id LEFT JOIN signals s ON v.signal_id = s.id ORDER BY v.id";
+        try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                Vector<Object> row = new Vector<>();
+                row.add(rs.getInt(1));
+                row.add(rs.getString(2));
+                row.add(rs.getString(3));
+                row.add(rs.getString(4));
+                row.add(rs.getDouble(5));
+                row.add(rs.getTimestamp(6));
+                violationModel.addRow(row);
+            }
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error loading violations: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    // ---------------- Main ----------------
+    public static void main(String[] args) {
+        // Load JDBC driver explicitly (optional, but helpful when different environments)
+        try {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+        } catch (ClassNotFoundException e) {
+            JOptionPane.showMessageDialog(null, "MySQL JDBC Driver not found. Add connector jar to classpath.");
+            System.exit(1);
+        }
+
+        SwingUtilities.invokeLater(() -> {
+            TrafficManagementSystem app = new TrafficManagementSystem();
+            app.setVisible(true);
+        });
+    }
+}
